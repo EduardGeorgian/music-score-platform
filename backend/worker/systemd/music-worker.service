@@ -1,0 +1,18 @@
+[Unit]
+Description=Music Score Processing Worker
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/worker
+Environment="PATH=/home/ubuntu/oemer-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/oemer-env/bin/python -u /home/ubuntu/worker/worker.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=music-worker
+
+[Install]
+WantedBy=multi-user.target
