@@ -31,6 +31,42 @@ def download_from_s3(bucket, key, local_path):
     s3.download_file(bucket, key, local_path)
     print(f"  ✅ Descărcat: {local_path}")
 
+def preprocess_image(input_path, output_path):
+    """Pre-procesează imaginea pentru OMR mai bun"""
+    try:
+        print(f"  🖼️  Pre-procesez imaginea pentru OMR...")
+        
+        cmd = [
+            'convert',
+            input_path,
+            '-colorspace', 'Gray',
+            '-contrast',
+            '-contrast',
+            '-threshold', '50%',
+            output_path
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            print(f"  ⚠️  Pre-procesare eșuată, folosesc imaginea originală")
+            return input_path
+        
+        print(f"  ✅ Imagine pre-procesată: {output_path}")
+        return output_path
+        
+    except FileNotFoundError:
+        print(f"  ⚠️  ImageMagick nu e instalat - folosesc imaginea originală")
+        print(f"     Rulează: sudo apt install imagemagick-6.q16")
+        return input_path
+    except Exception as e:
+        print(f"  ⚠️  Eroare la pre-procesare: {e}")
+        return input_path
+
 def process_with_oemer(input_image_path, output_dir):
     """Procesează partitura cu oemer"""
     print(f"  🎼 Procesez cu oemer (poate dura 10-15 minute)...")
@@ -265,22 +301,25 @@ while True:
                     print(f"  📊 Dimensiune fișier: {file_size / 1024:.1f} KB")
                 except Exception as e:
                     print(f"  ⚠️  Eroare la verificare fișier: {e}")
-                    # Continuă oricum - poate fi o problemă temporară
                 
                 # Actualizează status: Processing
                 update_post_status(post_id, 'processing')
                 
                 # Definește paths
                 local_image = os.path.join(WORK_DIR, 'input.jpg')
+                processed_image = os.path.join(WORK_DIR, 'input-processed.png')
                 output_dir = os.path.join(WORK_DIR, 'output')
                 
                 # 1. Descarcă imaginea
                 download_from_s3(bucket, key, local_image)
                 
-                # 2. Procesează cu oemer
-                process_with_oemer(local_image, output_dir)
+                # 2. Pre-procesează imaginea pentru OMR mai bun
+                final_image = preprocess_image(local_image, processed_image)
                 
-                # 3. Găsește fișierul MusicXML generat
+                # 3. Procesează cu oemer
+                process_with_oemer(final_image, output_dir)
+                
+                # 4. Găsește fișierul MusicXML generat
                 musicxml_files = [f for f in os.listdir(output_dir) if f.endswith('.musicxml')]
                 
                 if not musicxml_files:
@@ -289,15 +328,15 @@ while True:
                 musicxml_file = os.path.join(output_dir, musicxml_files[0])
                 print(f"  📄 Fișier MusicXML găsit: {musicxml_files[0]}")
                 
-                # 4. Generează MIDI din MusicXML
+                # 5. Generează MIDI din MusicXML
                 midi_file = generate_midi_from_musicxml(musicxml_file)
                 
-                # 5. Generează MP3 din MIDI
+                # 6. Generează MP3 din MIDI
                 mp3_file = None
                 if midi_file and Path(midi_file).exists():
                     mp3_file = generate_mp3_from_midi(midi_file)
                 
-                # 6. Încarcă toate fișierele în S3
+                # 7. Încarcă toate fișierele în S3
                 print(f"\n  📦 Încărcare fișiere în S3...")
                 
                 # MusicXML (obligatoriu)
@@ -316,10 +355,10 @@ while True:
                     mp3_key = f"processed/{post_id}/audio.mp3"
                     mp3_url = upload_to_s3(mp3_file, OUTPUT_BUCKET, mp3_key)
                 
-                # 7. Actualizează status: Completed
+                # 8. Actualizează status: Completed
                 update_post_status(post_id, 'completed', musicxml_url, midi_url, mp3_url)
                 
-                # 8. Curăță fișierele temporare
+                # 9. Curăță fișierele temporare
                 cleanup(WORK_DIR)
                 
                 # Summary
