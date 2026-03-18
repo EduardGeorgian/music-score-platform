@@ -6,6 +6,18 @@ __pycache__/
 # C extensions
 *.so
 
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# CDK
+.cdk.staging/
+cdk.out/
+
+
+
 # Distribution / packaging
 .Python
 build/
@@ -205,3 +217,26 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-specific test files
+test.jpg
+test.png
+test-*.jpg
+test-*.png
+test-*.jpeg
+partitura-*.png
+simple-test.ps1
+test-api.ps1
+
+# Temporary processing files
+/tmp/oemer_processing/
+
+# IDE - additional
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# PowerShell scripts (if you want to keep test scripts out)
+# test-*.ps1
