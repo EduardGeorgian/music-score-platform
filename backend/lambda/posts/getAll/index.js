@@ -1,11 +1,10 @@
-// getPosts/index.js
+// getAll/index.js
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const {
   DynamoDBDocumentClient,
   ScanCommand,
 } = require("@aws-sdk/lib-dynamodb");
 
-// Configurare AWS client
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
@@ -13,10 +12,12 @@ const TABLE_NAME = process.env.TABLE_NAME;
 
 exports.handler = async (event) => {
   try {
-    // Parse query parameters
     const params = event.queryStringParameters || {};
     const limit = parseInt(params.limit || "20", 10);
-    const userId = params.userId; // Optional filter
+    const lastKey = params.lastKey
+      ? JSON.parse(decodeURIComponent(params.lastKey))
+      : undefined;
+    const statusFilter = params.status; // Optional: completed, processing, pending, failed
 
     // Build scan parameters
     const scanParams = {
@@ -24,37 +25,51 @@ exports.handler = async (event) => {
       Limit: limit,
     };
 
-    // Opțional: filtrare după userId
-    if (userId) {
-      scanParams.FilterExpression = "userId = :uid";
-      scanParams.ExpressionAttributeValues = {
-        ":uid": userId,
-      };
+    if (lastKey) {
+      scanParams.ExclusiveStartKey = lastKey;
+    }
+
+    // Optional status filter
+    if (statusFilter) {
+      scanParams.FilterExpression = "#status = :status";
+      scanParams.ExpressionAttributeNames = { "#status": "status" };
+      scanParams.ExpressionAttributeValues = { ":status": statusFilter };
     }
 
     // Scan DynamoDB
     const result = await docClient.send(new ScanCommand(scanParams));
 
-    // Sortează după createdAt (descending - cele mai noi primele)
+    // Sort by createdAt (descending - newest first)
     const posts = (result.Items || []).sort((a, b) => {
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    return response(200, {
+    const response = {
       posts,
       count: posts.length,
-    });
+    };
+
+    // Add pagination token if there are more results
+    if (result.LastEvaluatedKey) {
+      response.lastKey = encodeURIComponent(
+        JSON.stringify(result.LastEvaluatedKey),
+      );
+      response.hasMore = true;
+    } else {
+      response.hasMore = false;
+    }
+
+    return responseWithCors(200, response);
   } catch (error) {
     console.error("Error:", error);
-    return response(500, {
+    return responseWithCors(500, {
       error: "Internal server error",
       message: error.message,
     });
   }
 };
 
-// Helper function pentru response cu CORS
-function response(statusCode, body) {
+function responseWithCors(statusCode, body) {
   return {
     statusCode,
     headers: {
