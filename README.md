@@ -102,22 +102,88 @@ Built with a **serverless architecture** on AWS using Infrastructure as Code (CD
 
 ---
 
+## 🔐 Authentication
+
+This platform uses **AWS Cognito** for user authentication with **JWT tokens**.
+
+### **Cognito Configuration**
+
+- **User Pool ID:** `eu-north-1_fhcN3i17g`
+- **Client ID:** `759j1q95dr8ddsgpdiu93pb0jt`
+- **Region:** `eu-north-1`
+
+### **Getting a JWT Token**
+
+**1. Sign Up (Create User):**
+
+```bash
+aws cognito-idp sign-up \
+  --client-id 759j1q95dr8ddsgpdiu93pb0jt \
+  --username user@example.com \
+  --password YourPassword123! \
+  --user-attributes Name=email,Value=user@example.com
+```
+
+**2. Confirm User (if required):**
+
+```bash
+aws cognito-idp admin-confirm-sign-up \
+  --user-pool-id eu-north-1_fhcN3i17g \
+  --username user@example.com
+```
+
+**3. Login (Get Tokens):**
+
+```bash
+aws cognito-idp initiate-auth \
+  --client-id 759j1q95dr8ddsgpdiu93pb0jt \
+  --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters USERNAME=user@example.com,PASSWORD=YourPassword123!
+```
+
+**Response includes:**
+
+- `IdToken` - Use this for API authentication
+- `AccessToken` - For Cognito API calls
+- `RefreshToken` - To refresh expired tokens
+
+### **Using JWT in API Calls**
+
+Include the `IdToken` in the `Authorization` header:
+
+```http
+Authorization: Bearer eyJraWQiOiJ...your-id-token...
+```
+
+---
+
 ## 🔌 API Endpoints
 
 **Base URL:** `https://tkl02rb5f2.execute-api.eu-north-1.amazonaws.com/prod`
 
-### **1. Create Post**
+### **Authentication Status:**
+
+- 🔓 **Public** - No authentication required
+- 🔐 **Protected** - Requires JWT token in Authorization header
+
+---
+
+### **1. Create Post** 🔐
+
+**Authentication:** Required - JWT token must be in Authorization header
 
 ```http
 POST /posts
+Authorization: Bearer <JWT_TOKEN>
 Content-Type: application/json
 
 {
-  "userId": "string",
   "title": "string",
   "description": "string"
 }
 ```
+
+**Note:** `userId` is automatically extracted from JWT token (no need to send it!)
 
 **Response:**
 
@@ -132,7 +198,9 @@ Content-Type: application/json
 
 ---
 
-### **2. Get All Posts (Feed)**
+### **2. Get All Posts (Feed)** 🔓
+
+**Authentication:** Public - No token required
 
 ```http
 GET /posts?limit=20&lastKey=...&status=completed
@@ -170,7 +238,9 @@ GET /posts?limit=20&lastKey=...&status=completed
 
 ---
 
-### **3. Get Post by ID**
+### **3. Get Post by ID** 🔓
+
+**Authentication:** Public - No token required
 
 ```http
 GET /posts/{postId}
@@ -195,10 +265,13 @@ GET /posts/{postId}
 
 ---
 
-### **4. Get Download URL**
+### **4. Get Download URL** 🔐
+
+**Authentication:** Required - JWT token must be in Authorization header
 
 ```http
 GET /posts/{postId}/download?type=musicxml
+Authorization: Bearer <JWT_TOKEN>
 ```
 
 **Query Parameters:**
@@ -218,10 +291,15 @@ GET /posts/{postId}/download?type=musicxml
 
 ---
 
-### **5. Delete Post**
+### **5. Delete Post** 🔐
+
+**Authentication:** Required - JWT token must be in Authorization header
+
+**Authorization:** Only the post owner can delete their own posts
 
 ```http
 DELETE /posts/{postId}
+Authorization: Bearer <JWT_TOKEN>
 ```
 
 **Response:**
@@ -230,6 +308,84 @@ DELETE /posts/{postId}
 {
   "message": "Post deleted successfully",
   "postId": "uuid"
+}
+```
+
+**Error Responses:**
+
+- `401 Unauthorized` - No/invalid JWT token
+- `403 Forbidden` - Not the post owner
+- `404 Not Found` - Post doesn't exist
+
+---
+
+### **6. Get My Posts** 🔐 **NEW**
+
+**Authentication:** Required - JWT token must be in Authorization header
+
+Get all posts created by the authenticated user.
+
+```http
+GET /posts/my?limit=20&lastKey=...
+Authorization: Bearer <JWT_TOKEN>
+```
+
+**Query Parameters:**
+
+- `limit` (optional): Number of posts (default: 20)
+- `lastKey` (optional): Pagination token
+
+**Response:**
+
+```json
+{
+  "posts": [
+    {
+      "postId": "uuid",
+      "userId": "cognito-sub",
+      "title": "string",
+      "description": "string",
+      "status": "completed",
+      "musicxmlUrl": "s3://...",
+      "midiUrl": "s3://...",
+      "mp3Url": "s3://...",
+      "createdAt": "ISO-8601",
+      "updatedAt": "ISO-8601"
+    }
+  ],
+  "count": 5,
+  "hasMore": true,
+  "lastKey": "pagination-token"
+}
+```
+
+---
+
+### **7. Create User Profile** 🔐 **NEW**
+
+**Authentication:** Required - JWT token must be in Authorization header
+
+Create or update user profile. Called after Cognito sign-up.
+
+```http
+POST /users/profile
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "displayName": "John"
+}
+```
+
+**Note:** `userId` and `email` are automatically extracted from JWT token
+
+**Response:**
+
+```json
+{
+  "message": "Profil creat cu succes!",
+  "userId": "cognito-sub"
 }
 ```
 
@@ -380,44 +536,130 @@ music-score-platform/
 
 ## 🧪 Testing
 
-### **Using PowerShell:**
-
-```powershell
-# Run comprehensive test
-.\test-all-endpoints.ps1
-```
-
-### **Using cURL:**
+### **Getting a Test JWT Token:**
 
 ```bash
-# Create post
-curl -X POST https://API-URL/prod/posts \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"test","title":"Test Post","description":"Testing"}'
+# 1. Create test user
+aws cognito-idp sign-up \
+  --client-id 759j1q95dr8ddsgpdiu93pb0jt \
+  --username testuser@example.com \
+  --password TestPass123! \
+  --user-attributes Name=email,Value=testuser@example.com
 
-# Get all posts
+# 2. Confirm user (admin command)
+aws cognito-idp admin-confirm-sign-up \
+  --user-pool-id eu-north-1_fhcN3i17g \
+  --username testuser@example.com
+
+# 3. Get JWT token
+aws cognito-idp initiate-auth \
+  --client-id 759j1q95dr8ddsgpdiu93pb0jt \
+  --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters USERNAME=testuser@example.com,PASSWORD=TestPass123!
+
+# Save the IdToken from the response
+```
+
+---
+
+### **Using PowerShell with Authentication:**
+
+```powershell
+# Set your JWT token (from step 3 above)
+$token = "eyJraWQiOiJ...your-id-token..."
+$apiUrl = "https://tkl02rb5f2.execute-api.eu-north-1.amazonaws.com/prod"
+
+# Headers with authentication
+$authHeaders = @{
+    "Authorization" = "Bearer $token"
+    "Content-Type" = "application/json"
+}
+
+# Create post (PROTECTED)
+Invoke-RestMethod "$apiUrl/posts" `
+  -Method POST `
+  -Headers $authHeaders `
+  -Body '{"title":"Test Post","description":"Testing"}'
+
+# Get my posts (PROTECTED)
+Invoke-RestMethod "$apiUrl/posts/my?limit=10" `
+  -Headers $authHeaders
+
+# Get all posts (PUBLIC - no auth needed)
+Invoke-RestMethod "$apiUrl/posts?limit=10"
+
+# Delete post (PROTECTED - must be owner)
+Invoke-RestMethod "$apiUrl/posts/{postId}" `
+  -Method DELETE `
+  -Headers $authHeaders
+```
+
+---
+
+### **Using cURL with Authentication:**
+
+```bash
+# Set your token
+TOKEN="eyJraWQiOiJ...your-id-token..."
+
+# Create post (PROTECTED)
+curl -X POST https://API-URL/prod/posts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test Post","description":"Testing"}'
+
+# Get my posts (PROTECTED)
+curl https://API-URL/prod/posts/my \
+  -H "Authorization: Bearer $TOKEN"
+
+# Get all posts (PUBLIC)
 curl https://API-URL/prod/posts?limit=10
 
-# Get specific post
+# Get specific post (PUBLIC)
 curl https://API-URL/prod/posts/{postId}
 
-# Get download URL
-curl https://API-URL/prod/posts/{postId}/download?type=musicxml
+# Get download URL (PROTECTED)
+curl https://API-URL/prod/posts/{postId}/download?type=musicxml \
+  -H "Authorization: Bearer $TOKEN"
 
-# Delete post
-curl -X DELETE https://API-URL/prod/posts/{postId}
+# Delete post (PROTECTED)
+curl -X DELETE https://API-URL/prod/posts/{postId} \
+  -H "Authorization: Bearer $TOKEN"
+
+# Create user profile (PROTECTED)
+curl -X POST https://API-URL/prod/users/profile \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"John Doe","displayName":"John"}'
 ```
 
 ---
 
 ## 📊 Database Schema
 
-### **DynamoDB Table: Posts**
+### **DynamoDB Tables**
+
+#### **Users Table**
+
+| Attribute     | Type        | Description                      |
+| ------------- | ----------- | -------------------------------- |
+| `userId`      | String (PK) | Cognito user sub (UUID)          |
+| `email`       | String      | User email from Cognito          |
+| `name`        | String      | User's full name                 |
+| `displayName` | String      | Display name for UI              |
+| `createdAt`   | String      | ISO-8601 timestamp               |
+| `updatedAt`   | String      | ISO-8601 timestamp               |
+| `followers`   | Number      | Follower count (future feature)  |
+| `following`   | Number      | Following count (future feature) |
+
+---
+
+#### **Posts Table**
 
 | Attribute     | Type        | Description                                    |
 | ------------- | ----------- | ---------------------------------------------- |
 | `postId`      | String (PK) | UUID primary key                               |
-| `userId`      | String      | User identifier                                |
+| `userId`      | String      | Cognito user sub (FK to Users)                 |
 | `title`       | String      | Post title                                     |
 | `description` | String      | Post description                               |
 | `status`      | String      | `pending`, `processing`, `completed`, `failed` |
@@ -426,6 +668,13 @@ curl -X DELETE https://API-URL/prod/posts/{postId}
 | `mp3Url`      | String      | S3 URI for MP3 file                            |
 | `createdAt`   | String      | ISO-8601 timestamp                             |
 | `updatedAt`   | String      | ISO-8601 timestamp                             |
+
+**Global Secondary Index:**
+
+- **Index Name:** `userId-createdAt-index`
+- **Partition Key:** `userId` (String)
+- **Sort Key:** `createdAt` (String)
+- **Purpose:** Query user's posts sorted by date (for "My Posts" feature)
 
 ---
 
@@ -466,12 +715,30 @@ app-partituri-eduard-test/
 
 ## 🔒 Security Considerations
 
+- ✅ **AWS Cognito authentication** implemented
+- ✅ **JWT token validation** on protected endpoints
+- ✅ **Ownership verification** - users can only delete their own posts
+- ✅ **Automatic userId extraction** from JWT (no spoofing possible)
 - ✅ S3 bucket is private (no public access)
 - ✅ Presigned URLs expire after 5-60 minutes
 - ✅ IAM roles with least privilege principle
 - ✅ CORS configured for browser security
-- ⚠️ No authentication implemented yet (add Cognito for production)
-- ⚠️ No API keys (add for production)
+- ⚠️ API throttling enabled (100 req/s rate, 200 burst)
+- ⚠️ Consider adding API keys for additional protection
+- ⚠️ Consider MFA (Multi-Factor Authentication) for sensitive operations
+
+### **Authentication Flow:**
+
+```
+1. User signs up → Cognito User Pool
+2. User confirms email → Account activated
+3. User logs in → Receives JWT tokens (ID, Access, Refresh)
+4. Frontend stores tokens securely
+5. API calls include: Authorization: Bearer <ID_TOKEN>
+6. API Gateway validates JWT with Cognito
+7. Lambda extracts userId from validated token
+8. Lambda performs authorized operations
+```
 
 ---
 
@@ -508,15 +775,20 @@ oemer input.jpg -o output/
 
 ## 🚧 Future Enhancements
 
-- [ ] User authentication (AWS Cognito)
-- [ ] React frontend
+- [x] ~~User authentication (AWS Cognito)~~ ✅ Implemented
+- [x] ~~User profiles and ownership~~ ✅ Implemented
+- [x] ~~"My Posts" endpoint~~ ✅ Implemented
+- [ ] React frontend with Cognito login
 - [ ] Real-time status updates (WebSockets)
 - [ ] Multi-page score support
-- [ ] User profiles and social features
-- [ ] Comments and likes
+- [ ] Comments and likes on posts
+- [ ] User following/followers system
 - [ ] Music playback in browser
 - [ ] Share to social media
 - [ ] Mobile app (React Native)
+- [ ] Email notifications (SES)
+- [ ] Admin dashboard
+- [ ] Analytics and usage metrics
 - [ ] Cost optimization (Lambda for OMR, Spot instances)
 
 ---
