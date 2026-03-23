@@ -17,31 +17,39 @@ const UPLOAD_EXPIRATION = 300; // 5 minute
 
 exports.handler = async (event) => {
   try {
-    // Parse request body
-    const body = JSON.parse(event.body || "{}");
-
-    // Validare input
-    const { userId, title, description } = body;
+    // Extract userId from JWT (Cognito Authorizer)
+    const userId = event.requestContext?.authorizer?.claims?.sub;
 
     if (!userId) {
-      return response(400, { error: "userId is required" });
+      return response(401, { error: "Unauthorized - No user ID in token" });
     }
 
-    // Generează postId unic
-    const postId = randomUUID();
+    // Parse body
+    const body = JSON.parse(event.body);
+    const { title, description } = body;
+
+    // Validation - NO userId in body anymore!
+    if (!title) {
+      return response(400, {
+        error: "title is required",
+      });
+    }
+
+    const postId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
 
-    // Creează înregistrare în DynamoDB
+    // Create post item (userId comes from JWT, not body!)
     const item = {
       postId,
-      userId,
-      title: title || "Untitled",
+      userId, // ← From JWT token
+      title,
       description: description || "",
-      status: "pending", // pending -> processing -> completed/failed
+      status: "pending",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
 
+    // Save to DynamoDB
     await docClient.send(
       new PutCommand({
         TableName: TABLE_NAME,
@@ -49,12 +57,11 @@ exports.handler = async (event) => {
       }),
     );
 
-    // Generează Presigned URL pentru upload (PUT)
-    const s3Key = `uploads/${postId}/score.jpg`;
-
+    // Generate presigned URL for upload
+    const uploadKey = `uploads/${postId}/score.jpg`;
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
-      Key: s3Key,
+      Key: uploadKey,
       ContentType: "image/jpeg",
     });
 
@@ -62,7 +69,6 @@ exports.handler = async (event) => {
       expiresIn: UPLOAD_EXPIRATION,
     });
 
-    // Response
     return response(201, {
       postId,
       uploadUrl,

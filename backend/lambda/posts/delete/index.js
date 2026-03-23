@@ -19,13 +19,20 @@ const BUCKET_NAME = process.env.BUCKET_NAME;
 
 exports.handler = async (event) => {
   try {
+    // Extract userId from JWT
+    const userId = event.requestContext?.authorizer?.claims?.sub;
+
+    if (!userId) {
+      return response(401, { error: "Unauthorized - No user ID in token" });
+    }
+
     const postId = event.pathParameters?.postId;
 
     if (!postId) {
       return response(400, { error: "postId is required" });
     }
 
-    // Verifică că postul există
+    // Get post to verify ownership
     const getResult = await docClient.send(
       new GetCommand({
         TableName: TABLE_NAME,
@@ -37,10 +44,17 @@ exports.handler = async (event) => {
       return response(404, { error: "Post not found" });
     }
 
-    // Șterge fișierele din S3 (uploads + processed)
+    // OWNERSHIP CHECK
+    if (getResult.Item.userId !== userId) {
+      return response(403, {
+        error: "Forbidden - You can only delete your own posts",
+      });
+    }
+
+    // Delete files from S3
     await deleteS3Files(postId);
 
-    // Șterge din DynamoDB
+    // Delete from DynamoDB
     await docClient.send(
       new DeleteCommand({
         TableName: TABLE_NAME,

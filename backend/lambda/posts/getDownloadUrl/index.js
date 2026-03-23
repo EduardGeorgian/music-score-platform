@@ -35,6 +35,10 @@ exports.handler = async (event) => {
       return response(404, { error: "Post not found" });
     }
 
+    if (result.Item.userId !== userId) {
+      return response(403, { error: "Forbidden" });
+    }
+
     if (result.Item.status !== "completed") {
       return response(400, {
         error: "Post is not ready for download",
