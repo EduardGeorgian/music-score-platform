@@ -166,6 +166,48 @@ function ProfilePage() {
             </Grid>
           </Grid>
 
+          <Grid item xs={12} md={6}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  📊 Quick Stats
+                </Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-around",
+                    mt: 2,
+                  }}
+                >
+                  <Box sx={{ textAlign: "center" }}>
+                    <Typography variant="h4" color="primary">
+                      0
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Posts
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: "center" }}>
+                    <Typography variant="h4" color="success.main">
+                      0
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Completed
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: "center" }}>
+                    <Typography variant="h4" color="warning.main">
+                      0
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Processing
+                    </Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
           <Divider sx={{ my: 3 }} />
 
           {/* Quick Actions */}

@@ -1,37 +1,37 @@
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { apiConfig } from '../config/cognito';
+import React, { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import apiService from "../services/api";
+import UploadPost from "../components/posts/UploadPost";
+import PostCard from "../components/posts/PostCard";
 import {
   Container,
   Box,
   Typography,
   Button,
-  Paper,
   CircularProgress,
   Alert,
-  Card,
-  CardContent,
-  Chip,
-  Grid
-} from '@mui/material';
+  Grid,
+  Paper,
+} from "@mui/material";
 import {
   ArrowBack,
   CloudUpload,
-  MusicNote
-} from '@mui/icons-material';
+  MusicNote,
+  Refresh,
+} from "@mui/icons-material";
 
 function MyPostsPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login');
+      navigate("/login");
     } else {
       fetchMyPosts();
     }
@@ -41,41 +41,31 @@ function MyPostsPage() {
     if (!user?.token) return;
 
     setLoading(true);
-    setError('');
-    
+    setError("");
+
     try {
-      const response = await axios.get(
-        `${apiConfig.baseURL}/posts/my?limit=20`,
-        {
-          headers: {
-            Authorization: `Bearer ${user.token}`
-          }
-        }
-      );
-      
+      const response = await apiService.getMyPosts(user.token, 20);
       setPosts(response.data.posts || []);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch posts');
-      console.error('Fetch posts error:', err);
+      setError(err.response?.data?.error || "Failed to fetch posts");
+      console.error("Fetch posts error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return 'success';
-      case 'processing': return 'warning';
-      case 'pending': return 'info';
-      case 'failed': return 'error';
-      default: return 'default';
-    }
+  const handleUploadSuccess = () => {
+    fetchMyPosts();
+  };
+
+  const handleDelete = (postId) => {
+    setPosts(posts.filter((p) => p.postId !== postId));
   };
 
   if (loading) {
     return (
       <Container maxWidth="lg">
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
           <CircularProgress />
         </Box>
       </Container>
@@ -86,11 +76,18 @@ function MyPostsPage() {
     <Container maxWidth="lg">
       <Box sx={{ mt: 4, mb: 4 }}>
         {/* Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            mb: 3,
+            flexWrap: "wrap",
+            gap: 2,
+          }}
+        >
           <Button
             startIcon={<ArrowBack />}
-            onClick={() => navigate('/profile')}
-            sx={{ mr: 2 }}
+            onClick={() => navigate("/profile")}
           >
             Back
           </Button>
@@ -98,11 +95,18 @@ function MyPostsPage() {
             My Posts
           </Typography>
           <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={fetchMyPosts}
+          >
+            Refresh
+          </Button>
+          <Button
             variant="contained"
             startIcon={<CloudUpload />}
-            disabled
+            onClick={() => setUploadDialogOpen(true)}
           >
-            Upload (Coming Soon)
+            Upload
           </Button>
         </Box>
 
@@ -114,63 +118,39 @@ function MyPostsPage() {
 
         {/* Posts List */}
         {posts.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 6, textAlign: 'center' }}>
-            <MusicNote sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
+          <Paper elevation={3} sx={{ p: 6, textAlign: "center" }}>
+            <MusicNote sx={{ fontSize: 80, color: "text.secondary", mb: 2 }} />
             <Typography variant="h6" color="text.secondary" gutterBottom>
               No posts yet
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Upload your first sheet music to get started!
             </Typography>
-            <Button variant="contained" disabled>
-              Upload Sheet Music (Coming Soon)
+            <Button
+              variant="contained"
+              startIcon={<CloudUpload />}
+              onClick={() => setUploadDialogOpen(true)}
+            >
+              Upload Sheet Music
             </Button>
           </Paper>
         ) : (
           <Grid container spacing={3}>
             {posts.map((post) => (
               <Grid item xs={12} key={post.postId}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="h6" gutterBottom>
-                          {post.title}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          {post.description || 'No description'}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Created: {new Date(post.createdAt).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                      <Chip
-                        label={post.status}
-                        color={getStatusColor(post.status)}
-                        sx={{ ml: 2 }}
-                      />
-                    </Box>
-
-                    {post.status === 'completed' && (
-                      <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                        <Button size="small" variant="outlined" disabled>
-                          Download MusicXML
-                        </Button>
-                        <Button size="small" variant="outlined" disabled>
-                          Download MIDI
-                        </Button>
-                        <Button size="small" variant="outlined" disabled>
-                          Download MP3
-                        </Button>
-                      </Box>
-                    )}
-                  </CardContent>
-                </Card>
+                <PostCard post={post} onDelete={handleDelete} />
               </Grid>
             ))}
           </Grid>
         )}
       </Box>
+
+      {/* Upload Dialog */}
+      <UploadPost
+        open={uploadDialogOpen}
+        onClose={() => setUploadDialogOpen(false)}
+        onSuccess={handleUploadSuccess}
+      />
     </Container>
   );
 }

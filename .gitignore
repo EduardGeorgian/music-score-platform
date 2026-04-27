@@ -16,6 +16,12 @@ yarn-error.log*
 .cdk.staging/
 cdk.out/
 
+# ENVIRONMENT
+.env
+.env.local
+.env.production
+
+
 
 
 # Distribution / packaging

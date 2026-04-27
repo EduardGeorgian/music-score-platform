@@ -13,8 +13,13 @@ const DOWNLOAD_EXPIRATION = 3600; // 1 hour
 
 exports.handler = async (event) => {
   try {
+    const userId = event.requestContext?.authorizer?.claims?.sub;
     const postId = event.pathParameters?.postId;
     const fileType = event.queryStringParameters?.type; // musicxml, midi, mp3
+
+    if (!userId) {
+      return response(401, { error: "Unauthorized" });
+    }
 
     if (!postId || !fileType) {
       return response(400, {
