@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import apiService from "../services/api";
 import UploadPost from "../components/posts/UploadPost";
 import PostCard from "../components/posts/PostCard";
+import CreatePostDialog from "../components/posts/CreatePostDialog";
 import {
   Container,
   Box,
@@ -28,6 +29,8 @@ function MyPostsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [pendingPostData, setPendingPostData] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -54,6 +57,23 @@ function MyPostsPage() {
     }
   };
 
+  const handlePostTypeSelected = async (data) => {
+    setCreateDialogOpen(false);
+
+    if (data.postType === "text") {
+      // Create text post directly
+      try {
+        await apiService.createTextPost(user.token, data);
+        fetchMyPosts();
+      } catch (err) {
+        setError("Failed to create text post");
+      }
+    } else {
+      // Open upload dialog for score/image/video
+      setPendingPostData(data);
+      setUploadDialogOpen(true);
+    }
+  };
   const handleUploadSuccess = () => {
     fetchMyPosts();
   };
@@ -104,9 +124,9 @@ function MyPostsPage() {
           <Button
             variant="contained"
             startIcon={<CloudUpload />}
-            onClick={() => setUploadDialogOpen(true)}
+            onClick={() => setCreateDialogOpen(true)} // ← Changed
           >
-            Upload
+            Create Post
           </Button>
         </Box>
 
@@ -145,11 +165,22 @@ function MyPostsPage() {
         )}
       </Box>
 
+      {/* Create Post Dialog */}
+      <CreatePostDialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onPostTypeSelected={handlePostTypeSelected}
+      />
+
       {/* Upload Dialog */}
       <UploadPost
         open={uploadDialogOpen}
-        onClose={() => setUploadDialogOpen(false)}
+        onClose={() => {
+          setUploadDialogOpen(false);
+          setPendingPostData(null);
+        }}
         onSuccess={handleUploadSuccess}
+        postData={pendingPostData}
       />
     </Container>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import apiService from "../../services/api";
 import {
@@ -23,10 +23,14 @@ import {
   MusicNote,
   PictureAsPdf,
   AudioFile,
+  TextFields,
+  Image,
+  VideoLibrary,
 } from "@mui/icons-material";
 
 function PostCard({ post, onDelete }) {
   const { user } = useAuth();
+  const [currentPost, setCurrentPost] = useState(post);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState({});
@@ -44,6 +48,21 @@ function PostCard({ post, onDelete }) {
         return "error";
       default:
         return "default";
+    }
+  };
+
+  const getPostTypeIcon = (type) => {
+    switch (type) {
+      case "score":
+        return <MusicNote />;
+      case "text":
+        return <TextFields />;
+      case "image":
+        return <Image />;
+      case "video":
+        return <VideoLibrary />;
+      default:
+        return <MusicNote />;
     }
   };
 
@@ -113,11 +132,13 @@ function PostCard({ post, onDelete }) {
               </Typography>
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Chip
-                label={post.status}
-                color={getStatusColor(post.status)}
-                size="small"
-              />
+              {post.postType === "score" && ( // Only show status for score posts
+                <Chip
+                  label={post.status}
+                  color={getStatusColor(post.status)}
+                  size="small"
+                />
+              )}
               <IconButton
                 size="small"
                 color="error"
@@ -133,6 +154,19 @@ function PostCard({ post, onDelete }) {
               {error}
             </Alert>
           )}
+          <Chip
+            icon={getPostTypeIcon(post.postType)}
+            label={post.postType}
+            size="small"
+            sx={{ mr: 1 }}
+          />
+
+          {/* Text Content (for text posts) */}
+          {post.postType === "text" && post.content && (
+            <Typography variant="body1" sx={{ mt: 2, whiteSpace: "pre-wrap" }}>
+              {post.content}
+            </Typography>
+          )}
 
           {post.status === "processing" && (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
@@ -143,7 +177,7 @@ function PostCard({ post, onDelete }) {
             </Box>
           )}
 
-          {post.status === "completed" && (
+          {post.postType === "score" && post.status === "completed" && (
             <Box sx={{ mt: 2, display: "flex", gap: 1, flexWrap: "wrap" }}>
               <Button
                 size="small"

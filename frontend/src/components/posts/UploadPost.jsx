@@ -22,7 +22,7 @@ import {
   CheckCircle,
 } from "@mui/icons-material";
 
-function UploadPost({ open, onClose, onSuccess }) {
+function UploadPost({ open, onClose, onSuccess, postData }) {
   const { user } = useAuth();
   const [step, setStep] = useState(0); // 0: select, 1: uploading, 2: processing
   const [selectedFile, setSelectedFile] = useState(null);
@@ -32,6 +32,8 @@ function UploadPost({ open, onClose, onSuccess }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
   const [postId, setPostId] = useState(null);
+  const [canDismiss, setCanDismiss] = useState(false);
+  const [processingInBackground, setProcessingInBackground] = useState(false);
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -75,6 +77,8 @@ function UploadPost({ open, onClose, onSuccess }) {
       const createResponse = await apiService.createPost(user.token, {
         title: title.trim(),
         description: description.trim(),
+        postType: postData?.postType || "score",
+        contentType: selectedFile.type,
       });
 
       const { postId: newPostId, uploadUrl } = createResponse.data;
@@ -94,7 +98,9 @@ function UploadPost({ open, onClose, onSuccess }) {
   };
 
   const pollPostStatus = async (id) => {
-    const maxAttempts = 120; // 10 minutes (10 second intervals)
+    setCanDismiss(true); // ← Allow dismiss after upload
+
+    const maxAttempts = 180; // ~30 minutes
     let attempts = 0;
 
     const poll = setInterval(async () => {
@@ -104,27 +110,31 @@ function UploadPost({ open, onClose, onSuccess }) {
 
         if (status === "completed") {
           clearInterval(poll);
-          handleSuccess();
+          if (!processingInBackground) {
+            handleSuccess();
+          } else {
+            // Show notification
+            console.log("Post processing completed!");
+          }
         } else if (status === "failed") {
           clearInterval(poll);
-          setError("Processing failed. Please try again.");
-          setStep(0);
+          if (!processingInBackground) {
+            setError("Processing failed");
+            setStep(0);
+          }
         }
 
         attempts++;
         if (attempts >= maxAttempts) {
           clearInterval(poll);
-          setError(
-            "Processing is taking longer than expected. Check back later.",
-          );
-          setStep(0);
         }
       } catch (err) {
         clearInterval(poll);
-        setError("Failed to check status");
-        setStep(0);
       }
     }, 10000); // Poll every 10 seconds
+
+    // Store interval ID for cleanup
+    window.postPollingInterval = poll;
   };
 
   const handleSuccess = () => {
@@ -146,12 +156,21 @@ function UploadPost({ open, onClose, onSuccess }) {
   // TODO: Add cancel upload functionality (requires backend support to cancel processing and delete S3 object)
   // TODO: Add background upload and processing to avoid blocking UI
 
-  const handleClose = () => {
-    if (step === 1 || step === 2) {
-      // Don't allow closing during upload/processing
+  const handleClose = (event, reason) => {
+    // 1. Dacă încearcă să închidă din greșeală (click afară sau Escape), blocăm
+    if (
+      (step === 1 || step === 2) &&
+      (reason === "backdropClick" || reason === "escapeKeyDown")
+    ) {
       return;
     }
 
+    // 2. Dacă e fix la mijlocul upload-ului, nu dăm voie nici măcar manual (să nu stricăm fișierul)
+    if (step === 1 && !reason) {
+      return;
+    }
+
+    // Dacă a trecut de verificările de mai sus, resetăm și închidem
     setStep(0);
     setSelectedFile(null);
     setPreview(null);
@@ -164,13 +183,7 @@ function UploadPost({ open, onClose, onSuccess }) {
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      maxWidth="sm"
-      fullWidth
-      disableEscapeKeyDown={step === 1 || step === 2}
-    >
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>
         <Box
           sx={{
@@ -316,10 +329,33 @@ function UploadPost({ open, onClose, onSuccess }) {
             </Button>
           </>
         )}
-        {(step === 1 || step === 2) && (
+
+        {step === 1 && (
           <Typography variant="caption" color="text.secondary" sx={{ px: 2 }}>
-            Please don't close this window...
+            Uploading... Please wait
           </Typography>
+        )}
+
+        {step === 2 && (
+          <>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ px: 2, flexGrow: 1 }}
+            >
+              Processing will continue in background...
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => {
+                setProcessingInBackground(true);
+                handleClose();
+              }}
+              disabled={!canDismiss}
+            >
+              Continue Browsing
+            </Button>
+          </>
         )}
       </DialogActions>
     </Dialog>

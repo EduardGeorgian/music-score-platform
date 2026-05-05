@@ -14,7 +14,18 @@ export const apiService = {
       headers: { Authorization: `Bearer ${token}` },
     });
   },
-
+  createTextPost: async (token, data) => {
+    return api.post(
+      "/posts",
+      {
+        ...data,
+        postType: "text",
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+  },
   getMyPosts: async (token, limit = 20) => {
     return api.get(`/posts/myPosts?limit=${limit}`, {
       headers: { Authorization: `Bearer ${token}` },

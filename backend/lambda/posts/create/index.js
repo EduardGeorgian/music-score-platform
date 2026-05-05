@@ -26,12 +26,13 @@ exports.handler = async (event) => {
 
     // Parse body
     const body = JSON.parse(event.body);
-    const { title, description } = body;
+    const { title, description, postType, content } = body;
 
-    // Validation - NO userId in body anymore!
-    if (!title) {
+    // Validation
+    if (!title || !postType) {
       return response(400, {
-        error: "title is required",
+        error: "title and postType are required",
+        validTypes: ["score", "text", "image", "video"],
       });
     }
 
@@ -41,13 +42,19 @@ exports.handler = async (event) => {
     // Create post item (userId comes from JWT, not body!)
     const item = {
       postId,
-      userId, // ← From JWT token
+      userId,
+      postType,
       title,
       description: description || "",
+      content: content || null, // ← For text posts
       status: "pending",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
+
+    if (postType === "score") {
+      item.status = "pending";
+    }
 
     // Save to DynamoDB
     await docClient.send(
@@ -57,24 +64,37 @@ exports.handler = async (event) => {
       }),
     );
 
-    // Generate presigned URL for upload
-    const uploadKey = `uploads/${postId}/score.jpg`;
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: uploadKey,
-      ContentType: "image/jpeg",
-    });
+    // Generate presigned URL ONLY for score/image/video
+    if (postType === "score" || postType === "image" || postType === "video") {
+      const fileExtension =
+        postType === "score" ? "jpg" : postType === "image" ? "jpg" : "mp4";
+      const folder = postType === "score" ? "uploads" : "media";
+      const uploadKey = `${folder}/${postId}/score.${fileExtension}`;
 
-    const uploadUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: UPLOAD_EXPIRATION,
-    });
+      const command = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: uploadKey,
+        ContentType: postType === "video" ? "video/mp4" : "image/jpeg",
+      });
 
+      const uploadUrl = await getSignedUrl(s3Client, command, {
+        expiresIn: UPLOAD_EXPIRATION,
+      });
+
+      return response(201, {
+        postId,
+        postType,
+        uploadUrl,
+        expiresIn: UPLOAD_EXPIRATION,
+        message: `Post created. Upload your ${postType}.`,
+      });
+    }
+
+    // For text posts - no upload needed
     return response(201, {
       postId,
-      uploadUrl,
-      expiresIn: UPLOAD_EXPIRATION,
-      message:
-        "Post created successfully. Use PUT request to uploadUrl to upload the image.",
+      postType: "text",
+      message: "Text post created successfully",
     });
   } catch (error) {
     console.error("Error:", error);
@@ -85,7 +105,6 @@ exports.handler = async (event) => {
   }
 };
 
-// Helper function pentru response cu CORS
 function response(statusCode, body) {
   return {
     statusCode,
