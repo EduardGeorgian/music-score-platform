@@ -3,6 +3,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import apiService from "../../services/api";
 import {
   Card,
+  CardMedia,
   CardContent,
   CardActions,
   Typography,
@@ -35,6 +36,35 @@ function PostCard({ post, onDelete }) {
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState({});
   const [error, setError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (previewUrl) return; // Dacă deja avem preview, nu încercăm să-l luăm din nou
+    if (currentPost.postType === "score" || currentPost.postType === "image") {
+      const fetchPreview = async () => {
+        try {
+          const response = await apiService.getDownloadUrl(
+            user.token,
+            currentPost.postId,
+            "preview",
+          );
+          if (isMounted) {
+            setPreviewUrl(response.data.downloadUrl);
+          }
+        } catch (err) {
+          console.error("Nu s-a putut încărca preview-ul", err);
+        }
+      };
+
+      fetchPreview();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentPost.postId, currentPost.postType, user.token]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -110,8 +140,66 @@ function PostCard({ post, onDelete }) {
 
   return (
     <>
-      <Card>
+      <Card sx={{ overflow: "hidden", borderRadius: 2 }}>
         <CardContent>
+          {previewUrl && (
+            <CardMedia
+              component="img"
+              height="300" // Poți schimba în funcție de cât de înaltă vrei poza
+              image={previewUrl}
+              alt={currentPost.title}
+              loading="lazy"
+              sx={{
+                objectFit: "cover", // Taie frumos marginile dacă poza e ciudată
+                backgroundColor: "#f5f5f5",
+              }}
+            />
+          )}
+          {currentPost.postType === "text" && (
+            <Box
+              sx={{
+                height: 300, // Aceeași înălțime ca pozele!
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                // Un gradient subtil și modern (poți schimba culorile dacă vrei)
+                background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+                color: "text.secondary",
+              }}
+            >
+              <TextFields sx={{ fontSize: 80, opacity: 0.5, mb: 1 }} />
+              <Typography
+                variant="overline"
+                sx={{ opacity: 0.6, letterSpacing: 2 }}
+              >
+                Article / Text
+              </Typography>
+            </Box>
+          )}
+
+          {/* (Opțional) Același lucru și pentru VIDEO, dacă vrei să arate uniform */}
+          {currentPost.postType === "video" && (
+            <Box
+              sx={{
+                height: 300,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)", // Gradient albastru închis pentru video
+                color: "white",
+              }}
+            >
+              <VideoLibrary sx={{ fontSize: 80, opacity: 0.8, mb: 1 }} />
+              <Typography
+                variant="overline"
+                sx={{ opacity: 0.8, letterSpacing: 2 }}
+              >
+                Video Clip
+              </Typography>
+            </Box>
+          )}
           <Box
             sx={{
               display: "flex",

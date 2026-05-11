@@ -1,34 +1,31 @@
-// createPost/index.js
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { randomUUID } = require("crypto");
+const crypto = require("crypto");
 
 // Configurare AWS clients
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
-// Constante din environment
 const TABLE_NAME = process.env.TABLE_NAME;
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const UPLOAD_EXPIRATION = 300; // 5 minute
 
 exports.handler = async (event) => {
   try {
-    // Extract userId from JWT (Cognito Authorizer)
+    // 1. Verificare Auth
     const userId = event.requestContext?.authorizer?.claims?.sub;
-
     if (!userId) {
       return response(401, { error: "Unauthorized - No user ID in token" });
     }
 
-    // Parse body
+    // 2. Parsare Body
     const body = JSON.parse(event.body);
-    const { title, description, postType, content } = body;
+    const { title, description, postType, content, fileName, contentType } =
+      body;
 
-    // Validation
     if (!title || !postType) {
       return response(400, {
         error: "title and postType are required",
@@ -39,24 +36,28 @@ exports.handler = async (event) => {
     const postId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
 
-    // Create post item (userId comes from JWT, not body!)
+    // Aflăm extensia reală a fișierului (dacă există)
+    let fileExt = "jpg";
+    if (fileName) {
+      fileExt = fileName.split(".").pop().toLowerCase();
+    }
+
+    // 3. Creare Item pentru baza de date
     const item = {
       postId,
       userId,
       postType,
       title,
       description: description || "",
-      content: content || null, // ← For text posts
-      status: "pending",
+      content: content || null,
+      // Score-urile merg în "pending" pentru procesare, imaginile și textele sunt gata instant "completed"
+      status: postType === "score" ? "pending" : "completed",
+      fileExt: fileExt, // Salvăm extensia pentru download/preview
       createdAt: timestamp,
       updatedAt: timestamp,
     };
 
-    if (postType === "score") {
-      item.status = "pending";
-    }
-
-    // Save to DynamoDB
+    // 4. Salvare în DynamoDB
     await docClient.send(
       new PutCommand({
         TableName: TABLE_NAME,
@@ -64,17 +65,23 @@ exports.handler = async (event) => {
       }),
     );
 
-    // Generate presigned URL ONLY for score/image/video
+    // 5. Generare URL S3 pentru upload
     if (postType === "score" || postType === "image" || postType === "video") {
-      const fileExtension =
-        postType === "score" ? "jpg" : postType === "image" ? "jpg" : "mp4";
-      const folder = postType === "score" ? "uploads" : "media";
-      const uploadKey = `${folder}/${postId}/score.${fileExtension}`;
+      let folder = postType === "score" ? "uploads" : "media";
+      let baseName =
+        postType === "score"
+          ? "score"
+          : postType === "image"
+            ? "image"
+            : "video";
+
+      const uploadKey = `${folder}/${postId}/${baseName}.${fileExt}`;
+      const mimeType = contentType || "application/octet-stream";
 
       const command = new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: uploadKey,
-        ContentType: postType === "video" ? "video/mp4" : "image/jpeg",
+        ContentType: mimeType,
       });
 
       const uploadUrl = await getSignedUrl(s3Client, command, {
@@ -90,7 +97,7 @@ exports.handler = async (event) => {
       });
     }
 
-    // For text posts - no upload needed
+    // Pentru postările tip text
     return response(201, {
       postId,
       postType: "text",

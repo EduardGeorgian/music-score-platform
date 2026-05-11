@@ -15,7 +15,7 @@ exports.handler = async (event) => {
   try {
     const userId = event.requestContext?.authorizer?.claims?.sub;
     const postId = event.pathParameters?.postId;
-    const fileType = event.queryStringParameters?.type; // musicxml, midi, mp3
+    const fileType = event.queryStringParameters?.type; // musicxml, midi, mp3, preview
 
     if (!userId) {
       return response(401, { error: "Unauthorized" });
@@ -24,11 +24,10 @@ exports.handler = async (event) => {
     if (!postId || !fileType) {
       return response(400, {
         error: "postId and type are required",
-        validTypes: ["musicxml", "midi", "mp3"],
+        validTypes: ["musicxml", "midi", "mp3", "preview"],
       });
     }
 
-    // Verifică că postul există și e completed
     const result = await docClient.send(
       new GetCommand({
         TableName: TABLE_NAME,
@@ -40,19 +39,17 @@ exports.handler = async (event) => {
       return response(404, { error: "Post not found" });
     }
 
-    if (result.Item.userId !== userId) {
-      return response(403, { error: "Forbidden" });
-    }
-
-    if (result.Item.status !== "completed") {
+    // Permitem generarea link-ului de preview CHIAR DACĂ statusul e pending
+    if (result.Item.status !== "completed" && fileType !== "preview") {
       return response(400, {
         error: "Post is not ready for download",
         status: result.Item.status,
       });
     }
 
-    // Determină S3 key-ul bazat pe tip
+    const ext = result.Item.fileExt || "jpg"; // Fallback pentru postările vechi
     let s3Key;
+
     switch (fileType) {
       case "musicxml":
         s3Key = `processed/${postId}/score.musicxml`;
@@ -63,14 +60,24 @@ exports.handler = async (event) => {
       case "mp3":
         s3Key = `processed/${postId}/audio.mp3`;
         break;
+      case "preview":
+        if (result.Item.postType === "score") {
+          s3Key = `uploads/${postId}/score.${ext}`;
+        } else if (result.Item.postType === "image") {
+          s3Key = `media/${postId}/image.${ext}`;
+        } else {
+          return response(400, {
+            error: "Nu există preview pentru acest tip de postare.",
+          });
+        }
+        break;
       default:
         return response(400, {
           error: "Invalid file type",
-          validTypes: ["musicxml", "midi", "mp3"],
+          validTypes: ["musicxml", "midi", "mp3", "preview"],
         });
     }
 
-    // Generează presigned URL
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: s3Key,

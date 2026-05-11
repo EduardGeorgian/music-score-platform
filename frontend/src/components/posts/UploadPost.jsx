@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  TextField,
   Box,
   LinearProgress,
   Typography,
@@ -15,20 +14,13 @@ import {
   IconButton,
   Paper,
 } from "@mui/material";
-import {
-  Close,
-  CloudUpload,
-  Image as ImageIcon,
-  CheckCircle,
-} from "@mui/icons-material";
+import { Close, CloudUpload, Image as ImageIcon } from "@mui/icons-material";
 
 function UploadPost({ open, onClose, onSuccess, postData }) {
   const { user } = useAuth();
   const [step, setStep] = useState(0); // 0: select, 1: uploading, 2: processing
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
   const [postId, setPostId] = useState(null);
@@ -41,8 +33,8 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
     if (!file) return;
 
     // Validate file type
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
+    if (!file.type.startsWith("image/") && postData?.postType === "score") {
+      setError("Please select an image file for sheet music");
       return;
     }
 
@@ -55,17 +47,22 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
     setSelectedFile(file);
     setError("");
 
-    // Create preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
+    // Create preview for images
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPreview(null); // No preview for videos
+    }
   };
 
   const handleSubmit = async () => {
-    if (!selectedFile || !title.trim()) {
-      setError("Please select an image and enter a title");
+    // Folosim datele venite din fereastra anterioară (CreatePostDialog)
+    if (!selectedFile) {
+      setError("Please select a file to upload");
       return;
     }
 
@@ -73,12 +70,13 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
     setError("");
 
     try {
-      // Step 1: Create post and get presigned URL
+      // Step 1: Create post and get presigned URL (folosind detaliile din postData)
       const createResponse = await apiService.createPost(user.token, {
-        title: title.trim(),
-        description: description.trim(),
-        postType: postData?.postType || "score",
+        title: postData.title,
+        description: postData.description,
+        postType: postData.postType,
         contentType: selectedFile.type,
+        fileName: selectedFile.name,
       });
 
       const { postId: newPostId, uploadUrl } = createResponse.data;
@@ -87,9 +85,14 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
       // Step 2: Upload image to S3
       await apiService.uploadToS3(uploadUrl, selectedFile, setUploadProgress);
 
-      // Step 3: Start polling for completion
-      setStep(2);
-      pollPostStatus(newPostId);
+      // Step 3: Start polling for completion (Doar pentru scores)
+      if (postData.postType === "score") {
+        setStep(2);
+        pollPostStatus(newPostId);
+      } else {
+        // Pentru Image sau Video simple, oprim aici, nu e nevoie de procesare AI
+        handleSuccess();
+      }
     } catch (err) {
       setError(err.response?.data?.error || "Upload failed");
       setStep(0);
@@ -98,7 +101,7 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
   };
 
   const pollPostStatus = async (id) => {
-    setCanDismiss(true); // ← Allow dismiss after upload
+    setCanDismiss(true);
 
     const maxAttempts = 180; // ~30 minutes
     let attempts = 0;
@@ -113,7 +116,6 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
           if (!processingInBackground) {
             handleSuccess();
           } else {
-            // Show notification
             console.log("Post processing completed!");
           }
         } else if (status === "failed") {
@@ -131,9 +133,8 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
       } catch (err) {
         clearInterval(poll);
       }
-    }, 10000); // Poll every 10 seconds
+    }, 10000);
 
-    // Store interval ID for cleanup
     window.postPollingInterval = poll;
   };
 
@@ -141,8 +142,6 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
     setStep(0);
     setSelectedFile(null);
     setPreview(null);
-    setTitle("");
-    setDescription("");
     setUploadProgress(0);
     setPostId(null);
 
@@ -153,11 +152,7 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
     onClose();
   };
 
-  // TODO: Add cancel upload functionality (requires backend support to cancel processing and delete S3 object)
-  // TODO: Add background upload and processing to avoid blocking UI
-
   const handleClose = (event, reason) => {
-    // 1. Dacă încearcă să închidă din greșeală (click afară sau Escape), blocăm
     if (
       (step === 1 || step === 2) &&
       (reason === "backdropClick" || reason === "escapeKeyDown")
@@ -165,17 +160,13 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
       return;
     }
 
-    // 2. Dacă e fix la mijlocul upload-ului, nu dăm voie nici măcar manual (să nu stricăm fișierul)
     if (step === 1 && !reason) {
       return;
     }
 
-    // Dacă a trecut de verificările de mai sus, resetăm și închidem
     setStep(0);
     setSelectedFile(null);
     setPreview(null);
-    setTitle("");
-    setDescription("");
     setUploadProgress(0);
     setError("");
     setPostId(null);
@@ -192,7 +183,11 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
             justifyContent: "space-between",
           }}
         >
-          <Typography variant="h6">Upload Sheet Music</Typography>
+          <Typography variant="h6">
+            {/* Arată titlul în funcție de tipul ales în prima fereastră */}
+            Upload {postData?.postType === "video" ? "Video" : "File"} for "
+            {postData?.title}"
+          </Typography>
           {step === 0 && (
             <IconButton onClick={handleClose} size="small">
               <Close />
@@ -208,10 +203,9 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
           </Alert>
         )}
 
-        {/* Step 0: Select Image & Details */}
+        {/* Step 0: Select Image ONLY */}
         {step === 0 && (
           <>
-            {/* File Input */}
             <Button
               variant="outlined"
               component="label"
@@ -219,16 +213,15 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
               startIcon={<CloudUpload />}
               sx={{ mb: 2, py: 2 }}
             >
-              {selectedFile ? "Change Image" : "Select Image"}
+              {selectedFile ? "Change File" : "Select File"}
               <input
                 type="file"
                 hidden
-                accept="image/*"
+                accept={postData?.postType === "video" ? "video/*" : "image/*"}
                 onChange={handleFileSelect}
               />
             </Button>
 
-            {/* Preview */}
             {preview && (
               <Paper
                 elevation={3}
@@ -254,29 +247,17 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
                 </Typography>
               </Paper>
             )}
-
-            {/* Title */}
-            <TextField
-              fullWidth
-              label="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              margin="normal"
-              required
-              placeholder="e.g., Beethoven Symphony No. 5"
-            />
-
-            {/* Description */}
-            <TextField
-              fullWidth
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              margin="normal"
-              multiline
-              rows={3}
-              placeholder="Optional: Add details about this score..."
-            />
+            {/* Notă: Pentru clipuri video nu am pus preview ca să nu complic codul, va arăta doar numele fișierului */}
+            {selectedFile && !preview && (
+              <Typography
+                variant="caption"
+                display="block"
+                sx={{ mt: 1, textAlign: "center" }}
+              >
+                {selectedFile?.name} ({(selectedFile?.size / 1024).toFixed(1)}{" "}
+                KB)
+              </Typography>
+            )}
           </>
         )}
 
@@ -285,7 +266,7 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
           <Box sx={{ textAlign: "center", py: 3 }}>
             <CloudUpload sx={{ fontSize: 60, color: "primary.main", mb: 2 }} />
             <Typography variant="h6" gutterBottom>
-              Uploading Image...
+              Uploading File...
             </Typography>
             <LinearProgress
               variant="determinate"
@@ -298,7 +279,7 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
           </Box>
         )}
 
-        {/* Step 2: Processing */}
+        {/* Step 2: Processing (Doar pt scores) */}
         {step === 2 && (
           <Box sx={{ textAlign: "center", py: 3 }}>
             <ImageIcon sx={{ fontSize: 60, color: "primary.main", mb: 2 }} />
@@ -323,9 +304,9 @@ function UploadPost({ open, onClose, onSuccess, postData }) {
             <Button
               variant="contained"
               onClick={handleSubmit}
-              disabled={!selectedFile || !title.trim()}
+              disabled={!selectedFile}
             >
-              Upload & Process
+              Upload {postData?.postType === "score" ? "& Process" : ""}
             </Button>
           </>
         )}
