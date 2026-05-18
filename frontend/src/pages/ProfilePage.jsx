@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { apiConfig } from "../config/cognito";
+import apiService from "../services/api";
 import {
   Container,
   Box,
@@ -25,14 +26,26 @@ function ProfilePage() {
   const [profileCreated, setProfileCreated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stats, setStats] = useState({ total: 0, completed: 0, processing: 0 });
 
   useEffect(() => {
     if (!isAuthenticated) {
       navigate("/login");
     } else {
       createProfileIfNeeded();
+      fetchStats();
     }
   }, [isAuthenticated, navigate]);
+
+  const fetchStats = async () => {
+    if (!user?.token) return;
+    try {
+      const response = await apiService.getPostStats(user.token);
+      setStats(response.data);
+    } catch (err) {
+      console.error("Eroare la aducerea statisticilor:", err);
+    }
+  };
 
   const createProfileIfNeeded = async () => {
     if (!user?.token) return;
@@ -181,7 +194,7 @@ function ProfilePage() {
                 >
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="h4" color="primary">
-                      0
+                      {stats.total}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Posts
@@ -189,7 +202,7 @@ function ProfilePage() {
                   </Box>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="h4" color="success.main">
-                      0
+                      {stats.completed}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Completed
@@ -197,7 +210,7 @@ function ProfilePage() {
                   </Box>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="h4" color="warning.main">
-                      0
+                      {stats.processing}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       Processing

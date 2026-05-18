@@ -32,6 +32,12 @@ export const apiService = {
     });
   },
 
+  getPostStats: async (token) => {
+    return api.get(`/posts/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  },
+
   getPost: async (postId) => {
     return api.get(`/posts/${postId}`);
   },
